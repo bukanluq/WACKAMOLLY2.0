@@ -1,4 +1,3 @@
-
 const SERVICE_UUID =
   "12345678-1234-5678-1234-56789abcdef0";
 const EVENT_UUID =
@@ -132,8 +131,9 @@ async function connectController() {
   try {
     setStatus("Choose MoleController in the Bluetooth picker...");
 
+    // FIX: Filter by SERVICE_UUID instead of strict device name
     device = await navigator.bluetooth.requestDevice({
-      filters: [{ name: "MoleController" }],
+      filters: [{ services: [SERVICE_UUID] }],
       optionalServices: [SERVICE_UUID]
     });
 
