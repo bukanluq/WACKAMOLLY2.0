@@ -1,0 +1,33 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Whack-a-Mole</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="game">
+    <h1>🐹 Whack-a-Mole</h1>
+    <p>Connect your 16-button controller and catch the moles!</p>
+
+    <div class="toolbar">
+      <button id="connect">Connect controller</button>
+      <button id="start" disabled>Start game</button>
+    </div>
+
+    <p id="status">Controller disconnected</p>
+
+    <div class="stats">
+      <div>Score <strong id="score">0</strong></div>
+      <div>Time <strong id="time">30</strong>s</div>
+    </div>
+
+    <div id="board" aria-label="Sixteen-hole game board"></div>
+
+    <p id="message">Connect your controller to begin.</p>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
