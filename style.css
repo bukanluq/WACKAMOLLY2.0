@@ -1,0 +1,89 @@
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: system-ui, sans-serif;
+  color: #fff8e8;
+  background: #18392f;
+  display: grid;
+  place-items: center;
+}
+
+.game {
+  width: min(94vw, 580px);
+  padding: 22px;
+  text-align: center;
+}
+
+h1 { margin-bottom: 8px; }
+
+.toolbar {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 0;
+  border-radius: 10px;
+  padding: 11px 16px;
+  color: #18392f;
+  background: #ffd166;
+  font-weight: 700;
+}
+
+button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+#status, #message { min-height: 1.5em; }
+
+.stats {
+  display: flex;
+  justify-content: space-around;
+  margin: 18px 0;
+  font-size: 1.2rem;
+}
+
+.stats strong {
+  display: block;
+  font-size: 1.7rem;
+  color: #ffd166;
+}
+
+#board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(6px, 2vw, 12px);
+}
+
+.hole {
+  aspect-ratio: 1;
+  border: 3px solid #a4c686;
+  border-radius: 18px;
+  background: #315b42;
+  font-size: clamp(28px, 8vw, 48px);
+  display: grid;
+  place-items: center;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.hole.active {
+  background: #e9b96e;
+  border-color: #ffe2a4;
+}
+
+.hole.hit {
+  background: #69b578;
+}
+
+@media (max-width: 380px) {
+  .game { padding: 12px; }
+}
