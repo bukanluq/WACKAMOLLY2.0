@@ -128,6 +128,10 @@
       background: #ca8a04;
     }
 
+    .hole.active.clock {
+      background: #1e3a8a;
+    }
+
     .hole.hit {
       background: #166534;
       transform: scale(0.95);
@@ -136,6 +140,17 @@
     .hole.hit-bomb {
       background: #991b1b;
       transform: scale(0.95);
+    }
+
+    /* Flying Time Bonus Effect */
+    .flying-bonus {
+      position: absolute;
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #38bdf8;
+      pointer-events: none;
+      z-index: 20;
+      transition: all 0.8s ease-out;
     }
 
     /* Overlay for 3-Second Countdown */
@@ -203,7 +218,7 @@
 <body>
   <main class="game">
     <h1>🐹 Whack-a-Mole</h1>
-    <p>Avoid bombs (💣) and catch golden hamsters (🌟)!</p>
+    <p>Watch out for combos, bombs, and time clocks!</p>
 
     <div class="toolbar">
       <button id="connect">Connect Controller</button>
@@ -214,6 +229,7 @@
 
     <div class="stats">
       <div>Score: <strong id="score">0</strong></div>
+      <div>Combo: <strong id="combo">0X</strong></div>
       <div>Time: <strong id="time">30</strong>s</div>
     </div>
 
@@ -242,23 +258,28 @@
     const statusEl = document.querySelector("#status");
     const messageEl = document.querySelector("#message");
     const scoreEl = document.querySelector("#score");
+    const comboEl = document.querySelector("#combo");
     const timeEl = document.querySelector("#time");
     const leaderboardList = document.querySelector("#leaderboard-list");
     const countdownOverlay = document.querySelector("#countdown-overlay");
+    const boardContainer = document.querySelector(".board-container");
 
     let device = null;
     let characteristic = null;
     let connected = false;
     let playing = false;
     let score = 0;
+    let combo = 0;
     let timeLeft = 30;
-    let activeHole = -1;
-    let activeType = null;
     let gameTimer = null;
-    let moleTimer = null;
-    let moleDuration = 950;
+    let spawnInterval = null;
     let leaderboard = [];
     let currentUser = "NO NAME";
+
+    // Tracking spawned targets per hole: { type: 'normal'|'golden'|'bomb'|'clock', timer: timeoutId }
+    let holesState = Array(16).fill(null).map(() => ({ type: null, timer: null }));
+    let clocksSpawnedThisGame = 0;
+    let targetClockCount = 5;
 
     // Web Audio Context initialization
     let audioCtx = null;
@@ -272,24 +293,24 @@
       }
     }
 
-    // --- Sound Effects Generators ---
+    // --- High Volume Amplified Sound FX ---
     function playHitSound() {
       if (!audioCtx) return;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
 
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(400, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+      osc.frequency.setValueAtTime(450, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(900, audioCtx.currentTime + 0.1);
 
-      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.7, audioCtx.currentTime); // Louder
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
 
       osc.connect(gain);
       gain.connect(audioCtx.destination);
 
       osc.start();
-      osc.stop(audioCtx.currentTime + 0.1);
+      osc.stop(audioCtx.currentTime + 0.12);
     }
 
     function playGoldenSound() {
@@ -299,28 +320,47 @@
       const gain = audioCtx.createGain();
 
       osc.type = 'triangle';
-      osc.frequency.setValueAtTime(523.25, now); // C5
-      osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
-      osc.frequency.setValueAtTime(783.99, now + 0.16); // G5
+      osc.frequency.setValueAtTime(523.25, now);
+      osc.frequency.setValueAtTime(659.25, now + 0.08);
+      osc.frequency.setValueAtTime(783.99, now + 0.16);
 
-      gain.gain.setValueAtTime(0.4, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      gain.gain.setValueAtTime(0.8, now); // Louder
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
 
       osc.connect(gain);
       gain.connect(audioCtx.destination);
 
       osc.start();
-      osc.stop(now + 0.3);
+      osc.stop(now + 0.35);
+    }
+
+    function playClockSound() {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.setValueAtTime(1174.66, now + 0.1);
+
+      gain.gain.setValueAtTime(0.6, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(now + 0.25);
     }
 
     function playBombSound() {
       if (!audioCtx) return;
       const now = audioCtx.currentTime;
-      const bufferSize = audioCtx.sampleRate * 0.6;
+      const bufferSize = audioCtx.sampleRate * 0.8;
       const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
       const data = buffer.getChannelData(0);
 
-      // Generate loud noise pattern
       for (let i = 0; i < bufferSize; i++) {
         data[i] = Math.random() * 2 - 1;
       }
@@ -328,23 +368,22 @@
       const noise = audioCtx.createBufferSource();
       noise.buffer = buffer;
 
-      // Lowpass filter for deep explosion impact
       const filter = audioCtx.createBiquadFilter();
       filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(1000, now);
-      filter.frequency.linearRampToValueAtTime(100, now + 0.5);
+      filter.frequency.setValueAtTime(1200, now);
+      filter.frequency.linearRampToValueAtTime(80, now + 0.7);
 
-      // HIGH VOLUME boost (gain: 2.0 for extra loudness)
+      // VERY LOUD explosion gain boost (gain: 3.5)
       const gain = audioCtx.createGain();
-      gain.gain.setValueAtTime(2.0, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+      gain.gain.setValueAtTime(3.5, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.75);
 
       noise.connect(filter);
       filter.connect(gain);
       gain.connect(audioCtx.destination);
 
       noise.start(now);
-      noise.stop(now + 0.6);
+      noise.stop(now + 0.75);
     }
 
     function playBeepSound(freq) {
@@ -355,7 +394,7 @@
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
 
-      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
 
       osc.connect(gain);
@@ -380,84 +419,141 @@
       statusEl.textContent = text;
     }
 
-    function clearMole() {
-      if (activeHole >= 0) {
-        holes[activeHole].classList.remove("active", "bomb", "golden");
-        holes[activeHole].textContent = "🕳️";
-      }
-      activeHole = -1;
-      activeType = null;
+    function clearAllHoles() {
+      holesState.forEach((state, id) => {
+        if (state.timer) clearTimeout(state.timer);
+        holes[id].className = "hole";
+        holes[id].textContent = "🕳️";
+      });
+      holesState = Array(16).fill(null).map(() => ({ type: null, timer: null }));
     }
 
-    function spawnMole() {
+    function spawnMultipleTargets() {
       if (!playing) return;
-      clearMole();
 
-      const id = Math.floor(Math.random() * holes.length);
-      activeHole = id;
+      // Find available empty holes
+      let emptyIndices = holesState
+        .map((st, idx) => st.type === null ? idx : -1)
+        .filter(idx => idx !== -1);
 
-      const rand = Math.random();
-      if (rand < 0.20) {
-        activeType = 'bomb';
-        holes[id].classList.add("active", "bomb");
-        holes[id].textContent = "💣";
-        moleDuration = 700;
-      } else if (rand < 0.40) {
-        activeType = 'golden';
-        holes[id].classList.add("active", "golden");
-        holes[id].textContent = "🌟";
-        moleDuration = 550;
-      } else {
-        activeType = 'normal';
-        holes[id].classList.add("active");
-        holes[id].textContent = "🐹";
-        moleDuration = 950;
+      if (emptyIndices.length === 0) return;
+
+      // Pick 1 to 3 random empty holes to spawn targets simultaneously
+      let spawnCount = Math.min(emptyIndices.length, Math.floor(Math.random() * 3) + 1);
+      
+      for (let i = 0; i < spawnCount; i++) {
+        if (emptyIndices.length === 0) break;
+        let randomIndexPos = Math.floor(Math.random() * emptyIndices.length);
+        let id = emptyIndices.splice(randomIndexPos, 1)[0];
+
+        // Determine type: Normal (50%), Golden (20%), Bomb (20%), Clock (10% if limit not reached)
+        let rand = Math.random();
+        let type = 'normal';
+        let duration = 900;
+
+        if (clocksSpawnedThisGame < targetClockCount && rand < 0.12) {
+          type = 'clock';
+          duration = 800;
+          clocksSpawnedThisGame++;
+        } else if (rand < 0.32) {
+          type = 'golden';
+          duration = 600;
+        } else if (rand < 0.52) {
+          type = 'bomb';
+          duration = 750;
+        } else {
+          type = 'normal';
+          duration = 900;
+        }
+
+        holes[id].className = `hole active ${type}`;
+        if (type === 'normal') holes[id].textContent = "🐹";
+        if (type === 'golden') holes[id].textContent = "🌟";
+        if (type === 'bomb') holes[id].textContent = "💣";
+        if (type === 'clock') holes[id].textContent = "⏳";
+
+        holesState[id].type = type;
+        holesState[id].timer = setTimeout(() => {
+          if (playing) {
+            holes[id].className = "hole";
+            holes[id].textContent = "🕳️";
+            holesState[id] = { type: null, timer: null };
+          }
+        }, duration);
       }
-
-      clearTimeout(moleTimer);
-      moleTimer = setTimeout(() => {
-        clearMole();
-        if (playing) spawnMole();
-      }, moleDuration);
     }
 
     function hitHole(id) {
-      if (!playing || id !== activeHole) return;
+      if (!playing || holesState[id].type === null) return;
 
-      clearTimeout(moleTimer);
+      let type = holesState[id].type;
+      clearTimeout(holesState[id].timer);
+      holesState[id] = { type: null, timer: null };
 
-      if (activeType === 'bomb') {
-        playBombSound(); // Play LOUD explosion
-        holes[id].classList.add("hit-bomb");
+      if (type === 'bomb') {
+        playBombSound();
+        holes[id].className = "hole hit-bomb";
         holes[id].textContent = "💥";
         score = Math.max(0, score - 1);
+        combo = 0; // Reset combo on bomb
         scoreEl.textContent = score;
-        messageEl.textContent = "Ouch! Hit a bomb! (-1 pt)";
-      } else if (activeType === 'golden') {
-        playGoldenSound(); // Play chime
-        holes[id].classList.add("hit");
+        comboEl.textContent = combo + "X";
+        messageEl.textContent = "Ouch! Hit a bomb! (-1 pt, Combo Lost)";
+      } else if (type === 'golden') {
+        playGoldenSound();
+        holes[id].className = "hole hit";
         holes[id].textContent = "✨";
+        combo++;
         score += 2;
         scoreEl.textContent = score;
+        comboEl.textContent = combo + "X";
         messageEl.textContent = "Golden hit! (+2 pts)";
+      } else if (type === 'clock') {
+        playClockSound();
+        holes[id].className = "hole hit";
+        holes[id].textContent = "⏱️";
+        timeLeft += 5;
+        timeEl.textContent = timeLeft;
+        messageEl.textContent = "Time Bonus! (+5 seconds)";
+        triggerFlyingBonus(holes[id]);
       } else {
-        playHitSound(); // Play pop sound
-        holes[id].classList.add("hit");
+        playHitSound();
+        holes[id].className = "hole hit";
         holes[id].textContent = "💥";
+        combo++;
         score += 1;
         scoreEl.textContent = score;
+        comboEl.textContent = combo + "X";
         messageEl.textContent = "Nice hit!";
       }
 
-      activeHole = -1;
-      activeType = null;
-
       setTimeout(() => {
-        holes[id].classList.remove("hit", "hit-bomb", "bomb", "golden");
+        holes[id].className = "hole";
         holes[id].textContent = "🕳️";
       }, 180);
+    }
 
-      if (playing) spawnMole();
+    function triggerFlyingBonus(holeElement) {
+      const bonusEl = document.createElement("div");
+      bonusEl.className = "flying-bonus";
+      bonusEl.textContent = "+5s ⏳";
+
+      const holeRect = holeElement.getBoundingClientRect();
+      const boardRect = boardContainer.getBoundingClientRect();
+
+      bonusEl.style.left = (holeRect.left - boardRect.left + holeRect.width / 2 - 20) + "px";
+      bonusEl.style.top = (holeRect.top - boardRect.top) + "px";
+
+      boardContainer.appendChild(bonusEl);
+
+      setTimeout(() => {
+        bonusEl.style.transform = "translateY(-80px) scale(1.3)";
+        bonusEl.style.opacity = "0";
+      }, 50);
+
+      setTimeout(() => {
+        bonusEl.remove();
+      }, 850);
     }
 
     function startGame() {
@@ -471,21 +567,29 @@
       }
 
       clearInterval(gameTimer);
-      clearTimeout(moleTimer);
-      clearMole();
+      clearInterval(spawnInterval);
+      clearAllHoles();
 
       score = 0;
+      combo = 0;
       timeLeft = 30;
+      clocksSpawnedThisGame = 0;
+      targetClockCount = Math.floor(Math.random() * 3) + 5; // 5 to 7 clocks per game
       playing = false;
 
       scoreEl.textContent = score;
+      comboEl.textContent = combo + "X";
       timeEl.textContent = timeLeft;
       startBtn.disabled = true;
 
       runCountdown(3, () => {
         playing = true;
         messageEl.textContent = `Go ${currentUser}! Catch the moles!`;
-        spawnMole();
+        
+        // Spawn multiple targets continuously every 600ms
+        spawnInterval = setInterval(() => {
+          spawnMultipleTargets();
+        }, 600);
 
         gameTimer = setInterval(() => {
           timeLeft--;
@@ -524,8 +628,8 @@
     function endGame() {
       playing = false;
       clearInterval(gameTimer);
-      clearTimeout(moleTimer);
-      clearMole();
+      clearInterval(spawnInterval);
+      clearAllHoles();
 
       startBtn.disabled = !connected;
       messageEl.textContent = `Game over, ${currentUser}! Final score: ${score}`;
@@ -566,8 +670,8 @@
           connected = false;
           playing = false;
           clearInterval(gameTimer);
-          clearTimeout(moleTimer);
-          clearMole();
+          clearInterval(spawnInterval);
+          clearAllHoles();
 
           startBtn.disabled = true;
           setStatus("Controller disconnected");
