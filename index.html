@@ -121,10 +121,15 @@
       align-items: center;
       justify-content: center;
       user-select: none;
+      cursor: pointer; /* Makes it clear you can click with mouse */
       transition: transform 0.1s, background 0.1s;
     }
 
-    .hole.active { background: #854d0e; cursor: pointer; }
+    .hole:hover {
+      background: #444;
+    }
+
+    .hole.active { background: #854d0e; }
     .hole.active.bomb { background: #7f1d1d; }
     .hole.active.golden { background: #ca8a04; }
     .hole.active.clock { background: #1e3a8a; }
@@ -292,14 +297,14 @@
 <body>
   <main class="game">
     <h1>🐹 Whack-a-Mole EXTREME</h1>
-    <p>Buffs, Debuffs, Power-ups & Scary Surprises!</p>
+    <p>Play with Bluetooth Controller, Keyboard, or Mouse!</p>
 
     <div class="toolbar">
-      <button id="connect">Connect Controller</button>
-      <button id="start" disabled>Start Game</button>
+      <button id="connect">Connect Controller (Optional)</button>
+      <button id="start">Start Game</button>
     </div>
 
-    <p id="status">Controller disconnected</p>
+    <p id="status">Playing via Mouse/Keyboard</p>
     <div id="active-buff"></div>
 
     <div class="stats">
@@ -314,7 +319,7 @@
       <div id="countdown-overlay">3</div>
     </div>
 
-    <p id="message">Connect your controller to begin.</p>
+    <p id="message">Click Start Game to play!</p>
 
     <section class="leaderboard-container">
       <div class="leaderboard-header">
@@ -362,12 +367,11 @@
     let playing = false;
     let score = 0;
     let combo = 0;
-    let gameDuration = 30; // Default 30 seconds
+    let gameDuration = 30;
     let timeLeft = 30;
     let gameTimer = null;
     let spawnInterval = null;
     
-    // Separate leaderboards stored by mode key ('30', '60', '120')
     let leaderboards = {
       '30': [],
       '60': [],
@@ -512,12 +516,13 @@
       osc.stop(audioCtx.currentTime + 0.15);
     }
 
-    // Build grid of 16 holes
+    // Build grid of 16 holes with direct mouse click support
     const holes = Array.from({ length: 16 }, (_, id) => {
       const button = document.createElement("button");
       button.className = "hole";
       button.textContent = "🕳️";
       button.setAttribute("aria-label", `Hole ${id + 1}`);
+      // Mouse/touch click listener directly on the hole
       button.addEventListener("click", () => processHit(id));
       board.appendChild(button);
       return button;
@@ -600,7 +605,7 @@
 
         let rand = Math.random();
         let type = 'normal';
-        let duration = 1500; // Slower stay time (~40% longer)
+        let duration = 1500;
 
         if (clocksSpawnedThisGame < targetClockCount && rand < 0.10) {
           type = 'clock';
@@ -647,7 +652,7 @@
 
       let id = rawId;
       if (invertedControls) {
-        id = 15 - rawId; // Reverse mappings across the grid
+        id = 15 - rawId;
       }
 
       if (holesState[id].type === null) return;
@@ -761,7 +766,6 @@
     function startGame() {
       initAudio();
 
-      // Ask for game duration choice
       let choice = prompt("Choose game duration:\n1) 30 Seconds\n2) 1 Minute (60s)\n3) 2 Minutes (120s)", "30");
       if (choice === "2" || choice === "60" || choice === "1 Minute") {
         gameDuration = 60;
@@ -771,7 +775,6 @@
         gameDuration = 30;
       }
 
-      // Sync dropdown selector to chosen game mode
       modeSelector.value = gameDuration.toString();
 
       let username = prompt("Enter your username:", "NO NAME");
@@ -796,7 +799,6 @@
       scoreEl.textContent = score;
       comboEl.textContent = combo + "X";
       timeEl.textContent = timeLeft;
-      startBtn.disabled = true;
 
       runCountdown(3, () => {
         playing = true;
@@ -804,7 +806,7 @@
         
         spawnInterval = setInterval(() => {
           spawnMultipleTargets();
-        }, 850); // Slower spawn rhythm
+        }, 850);
 
         gameTimer = setInterval(() => {
           timeLeft--;
@@ -847,9 +849,7 @@
       resetBuffs();
       clearAllHoles();
 
-      startBtn.disabled = !connected;
       messageEl.textContent = `Game over, ${currentUser}! Final score: ${score}`;
-
       updateLeaderboard(currentUser, score, gameDuration);
     }
 
@@ -857,7 +857,7 @@
       const modeKey = duration.toString();
       leaderboards[modeKey].push({ name, score: finalScore });
       leaderboards[modeKey].sort((a, b) => b.score - a.score);
-      leaderboards[modeKey] = leaderboards[modeKey].slice(0, 5); // Keep top 5
+      leaderboards[modeKey] = leaderboards[modeKey].slice(0, 5);
 
       renderLeaderboard();
     }
@@ -899,15 +899,7 @@
 
         device.addEventListener("gattserverdisconnected", () => {
           connected = false;
-          playing = false;
-          clearInterval(gameTimer);
-          clearInterval(spawnInterval);
-          resetBuffs();
-          clearAllHoles();
-
-          startBtn.disabled = true;
           setStatus("Controller disconnected");
-          messageEl.textContent = "Reconnect your controller to play.";
         });
 
         const server = await device.gatt.connect();
@@ -918,9 +910,7 @@
         characteristic.addEventListener("characteristicvaluechanged", onButtonEvent);
 
         connected = true;
-        startBtn.disabled = false;
         setStatus(`Connected: ${device.name || "MoleController"}`);
-        messageEl.textContent = "Ready! Start the game.";
       } catch (error) {
         setStatus(`Connection failed: ${error.message}`);
       }
