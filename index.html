@@ -2,14 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Whack-a-Mole BLE - Extreme Edition</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Whack-a-Mole Mobile Extreme</title>
   <style>
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      -webkit-tap-highlight-color: transparent;
     }
 
     body {
@@ -19,46 +20,47 @@
       justify-content: center;
       align-items: center;
       min-height: 100vh;
-      padding: 20px;
+      padding: 10px;
       overflow-x: hidden;
     }
 
     .game {
       background: #1e1e1e;
-      border-radius: 12px;
-      padding: 24px;
+      border-radius: 16px;
+      padding: 16px;
       width: 100%;
-      max-width: 450px;
+      max-width: 400px;
       text-align: center;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
       position: relative;
     }
 
     h1 {
-      margin-bottom: 8px;
-      font-size: 1.8rem;
+      margin-bottom: 4px;
+      font-size: 1.5rem;
     }
 
     p {
       color: #aaa;
-      font-size: 0.95rem;
-      margin-bottom: 12px;
+      font-size: 0.85rem;
+      margin-bottom: 8px;
     }
 
     .toolbar {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       justify-content: center;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
 
     button {
       background: #2563eb;
       color: #fff;
       border: none;
-      padding: 10px 16px;
-      border-radius: 6px;
+      padding: 8px 12px;
+      border-radius: 8px;
       font-weight: bold;
+      font-size: 0.85rem;
       cursor: pointer;
       transition: background 0.2s;
     }
@@ -74,26 +76,27 @@
     }
 
     #status {
-      font-size: 0.85rem;
+      font-size: 0.75rem;
       color: #fbbf24;
-      margin-bottom: 12px;
+      margin-bottom: 6px;
     }
 
     #active-buff {
-      font-size: 0.95rem;
+      font-size: 0.85rem;
       font-weight: bold;
       color: #38bdf8;
-      min-height: 1.2em;
-      margin-bottom: 12px;
+      min-height: 1.1em;
+      margin-bottom: 6px;
     }
 
     .stats {
       display: flex;
       justify-content: space-around;
       background: #2a2a2a;
-      padding: 10px;
+      padding: 8px;
       border-radius: 8px;
-      margin-bottom: 20px;
+      margin-bottom: 12px;
+      font-size: 0.9rem;
       font-weight: 500;
     }
 
@@ -103,30 +106,31 @@
 
     .board-container {
       position: relative;
-      margin-bottom: 20px;
+      margin-bottom: 12px;
     }
 
     #board {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
+      gap: 8px;
     }
 
     .hole {
       background: #333;
       aspect-ratio: 1;
-      font-size: 1.8rem;
-      border-radius: 8px;
+      font-size: 1.6rem;
+      border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
       user-select: none;
-      cursor: pointer; /* Makes it clear you can click with mouse */
-      transition: transform 0.1s, background 0.1s;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: transform 0.08s, background 0.08s;
     }
 
-    .hole:hover {
-      background: #444;
+    .hole:active {
+      transform: scale(0.92);
     }
 
     .hole.active { background: #854d0e; }
@@ -136,8 +140,8 @@
     .hole.active.buff { background: #047857; }
     .hole.active.scare { background: #581c87; }
 
-    .hole.hit { background: #166534; transform: scale(0.95); }
-    .hole.hit-bomb { background: #991b1b; transform: scale(0.95); }
+    .hole.hit { background: #166534; transform: scale(0.92); }
+    .hole.hit-bomb { background: #991b1b; transform: scale(0.92); }
 
     /* Frost Freeze Overlay */
     #frost-overlay {
@@ -147,12 +151,12 @@
       width: 100%;
       height: 100%;
       background: rgba(56, 189, 248, 0.25);
-      border-radius: 8px;
+      border-radius: 10px;
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      font-size: 2rem;
+      font-size: 1.6rem;
       font-weight: bold;
       color: #e0f2fe;
       z-index: 15;
@@ -168,19 +172,19 @@
     .particle {
       position: absolute;
       pointer-events: none;
-      font-size: 1.2rem;
+      font-size: 1.1rem;
       z-index: 25;
       animation: popFly 0.8s ease-out forwards;
     }
 
     @keyframes popFly {
       0% { opacity: 1; transform: translate(0, 0) scale(1); }
-      100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.5); }
+      100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.4); }
     }
 
     .flying-bonus {
       position: absolute;
-      font-size: 1.5rem;
+      font-size: 1.3rem;
       font-weight: bold;
       color: #38bdf8;
       pointer-events: none;
@@ -188,7 +192,7 @@
       transition: all 0.8s ease-out;
     }
 
-    /* Overlay for 3-Second Countdown */
+    /* Countdown Overlay */
     #countdown-overlay {
       position: absolute;
       top: 0;
@@ -196,11 +200,11 @@
       width: 100%;
       height: 100%;
       background: rgba(0, 0, 0, 0.85);
-      border-radius: 8px;
+      border-radius: 10px;
       display: flex;
       justify-content: center;
       align-items: center;
-      font-size: 5rem;
+      font-size: 4rem;
       font-weight: bold;
       color: #fbbf24;
       z-index: 10;
@@ -211,7 +215,7 @@
 
     #countdown-overlay.show { opacity: 1; }
 
-    /* Full-Screen Jumpscare Overlay */
+    /* Jumpscare Overlay */
     #jumpscare-overlay {
       position: fixed;
       top: 0;
@@ -233,8 +237,7 @@
     }
 
     #jumpscare-face {
-      font-size: 18rem;
-      transform: scale(1);
+      font-size: 12rem;
       animation: shakeFace 0.05s infinite alternate;
     }
 
@@ -250,14 +253,15 @@
 
     #message {
       font-weight: bold;
-      margin-bottom: 20px;
+      font-size: 0.9rem;
+      margin-bottom: 12px;
       min-height: 1.2em;
     }
 
     .leaderboard-container {
       background: #2a2a2a;
-      padding: 16px;
-      border-radius: 8px;
+      padding: 10px 12px;
+      border-radius: 10px;
       text-align: left;
     }
 
@@ -265,11 +269,11 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 10px;
+      margin-bottom: 6px;
     }
 
     .leaderboard-container h2 {
-      font-size: 1.1rem;
+      font-size: 0.95rem;
       color: #fbbf24;
     }
 
@@ -277,17 +281,17 @@
       background: #111;
       color: #fff;
       border: 1px solid #444;
-      padding: 4px 8px;
+      padding: 3px 6px;
       border-radius: 4px;
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       cursor: pointer;
     }
 
     #leaderboard-list { list-style: none; }
     #leaderboard-list li {
-      padding: 6px 0;
+      padding: 4px 0;
       border-bottom: 1px solid #3d3d3d;
-      font-size: 0.9rem;
+      font-size: 0.8rem;
       display: flex;
       justify-content: space-between;
     }
@@ -296,15 +300,15 @@
 </head>
 <body>
   <main class="game">
-    <h1>🐹 Whack-a-Mole EXTREME</h1>
-    <p>Play with Bluetooth Controller, Keyboard, or Mouse!</p>
+    <h1>🐹 Whack-a-Mole</h1>
+    <p>Tap holes with Touch, Mouse, or Controller!</p>
 
     <div class="toolbar">
-      <button id="connect">Connect Controller (Optional)</button>
+      <button id="connect">Connect BLE</button>
       <button id="start">Start Game</button>
     </div>
 
-    <p id="status">Playing via Mouse/Keyboard</p>
+    <p id="status">Ready (Touch/Mouse Enabled)</p>
     <div id="active-buff"></div>
 
     <div class="stats">
@@ -319,15 +323,15 @@
       <div id="countdown-overlay">3</div>
     </div>
 
-    <p id="message">Click Start Game to play!</p>
+    <p id="message">Tap Start Game to begin!</p>
 
     <section class="leaderboard-container">
       <div class="leaderboard-header">
         <h2>🏆 Leaderboard</h2>
         <select id="mode-selector">
-          <option value="30">30 Seconds</option>
-          <option value="60">1 Minute</option>
-          <option value="120">2 Minutes</option>
+          <option value="30">30s</option>
+          <option value="60">1 Min</option>
+          <option value="120">2 Min</option>
         </select>
       </div>
       <ul id="leaderboard-list">
@@ -372,11 +376,7 @@
     let gameTimer = null;
     let spawnInterval = null;
     
-    let leaderboards = {
-      '30': [],
-      '60': [],
-      '120': []
-    };
+    let leaderboards = { '30': [], '60': [], '120': [] };
     let currentUser = "NO NAME";
 
     let scoreMultiplier = 1;
@@ -396,6 +396,13 @@
       }
       if (audioCtx.state === 'suspended') {
         audioCtx.resume();
+      }
+    }
+
+    // Trigger haptic vibration feedback if supported by device
+    function vibrate(pattern) {
+      if ("vibrate" in navigator) {
+        navigator.vibrate(pattern);
       }
     }
 
@@ -516,13 +523,12 @@
       osc.stop(audioCtx.currentTime + 0.15);
     }
 
-    // Build grid of 16 holes with direct mouse click support
+    // Build grid of 16 holes with touch/click responsiveness
     const holes = Array.from({ length: 16 }, (_, id) => {
       const button = document.createElement("button");
       button.className = "hole";
       button.textContent = "🕳️";
       button.setAttribute("aria-label", `Hole ${id + 1}`);
-      // Mouse/touch click listener directly on the hole
       button.addEventListener("click", () => processHit(id));
       board.appendChild(button);
       return button;
@@ -544,6 +550,7 @@
       jumpscareFace.textContent = scaryFaces[Math.floor(Math.random() * scaryFaces.length)];
       jumpscareOverlay.classList.add("active");
       playScreamSound();
+      vibrate([200, 100, 200, 100, 400]); // Heavy shudder on jumpscare
 
       setTimeout(() => {
         jumpscareOverlay.classList.remove("active");
@@ -570,6 +577,7 @@
         frostOverlay.classList.add("show");
         activeBuffEl.textContent = "❄️ DEBUFF: FROZEN! (3s)";
         activeBuffEl.style.color = "#38bdf8";
+        vibrate([100, 50, 100]);
         buffTimer = setTimeout(() => { resetBuffs(); }, 3000);
       } else if (chosen === "invert") {
         invertedControls = true;
@@ -670,6 +678,7 @@
         messageEl.textContent = "AAAHHH! Scary surprise!";
       } else if (type === 'bomb') {
         playBombSound();
+        vibrate([300, 100, 300]); // Heavy impact vibration for bomb
         if (Math.random() < 0.35) triggerJumpscare();
         holes[id].className = "hole hit-bomb";
         holes[id].textContent = "💥";
@@ -680,6 +689,7 @@
         messageEl.textContent = "Ouch! Hit a bomb! (-1 pt)";
       } else if (type === 'golden') {
         playGoldenSound();
+        vibrate(80); // Medium haptic pulse
         createParticles(holes[id], "✨");
         holes[id].className = "hole hit";
         holes[id].textContent = "🌟";
@@ -690,12 +700,14 @@
         messageEl.textContent = `Golden hit! (+${2 * scoreMultiplier} pts)`;
       } else if (type === 'buff') {
         playBuffSound();
+        vibrate([50, 50, 50]);
         createParticles(holes[id], "⚡");
         holes[id].className = "hole hit";
         holes[id].textContent = "🎁";
         applyRandomBuffOrDebuff();
       } else if (type === 'clock') {
         playClockSound();
+        vibrate(60);
         createParticles(holes[id], "⏱️");
         holes[id].className = "hole hit";
         holes[id].textContent = "⏱️";
@@ -705,6 +717,7 @@
         triggerFlyingBonus(holes[id]);
       } else {
         playHitSound();
+        vibrate(40); // Light snappy haptic pulse for regular hits
         holes[id].className = "hole hit";
         holes[id].textContent = "💥";
         combo++;
@@ -724,13 +737,13 @@
       const rect = element.getBoundingClientRect();
       const boardRect = boardContainer.getBoundingClientRect();
 
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 5; i++) {
         const p = document.createElement("div");
         p.className = "particle";
         p.textContent = emoji;
 
-        const dx = (Math.random() - 0.5) * 120 + "px";
-        const dy = (Math.random() - 0.5) * 120 + "px";
+        const dx = (Math.random() - 0.5) * 100 + "px";
+        const dy = (Math.random() - 0.5) * 100 + "px";
         p.style.setProperty('--dx', dx);
         p.style.setProperty('--dy', dy);
 
@@ -756,7 +769,7 @@
       boardContainer.appendChild(bonusEl);
 
       setTimeout(() => {
-        bonusEl.style.transform = "translateY(-80px) scale(1.3)";
+        bonusEl.style.transform = "translateY(-60px) scale(1.2)";
         bonusEl.style.opacity = "0";
       }, 50);
 
@@ -803,6 +816,7 @@
       runCountdown(3, () => {
         playing = true;
         messageEl.textContent = `Go ${currentUser}! Catch the moles!`;
+        vibrate(100);
         
         spawnInterval = setInterval(() => {
           spawnMultipleTargets();
@@ -851,6 +865,7 @@
 
       messageEl.textContent = `Game over, ${currentUser}! Final score: ${score}`;
       updateLeaderboard(currentUser, score, gameDuration);
+      vibrate([100, 100, 200]);
     }
 
     function updateLeaderboard(name, finalScore, duration) {
@@ -885,12 +900,12 @@
       initAudio();
 
       if (!navigator.bluetooth) {
-        setStatus("Web Bluetooth unavailable. Use Chrome/Edge over HTTPS or Localhost.");
+        alert("Web Bluetooth unavailable on this browser. You can play directly using touch/mouse!");
         return;
       }
 
       try {
-        setStatus("Choose MoleController in the Bluetooth picker...");
+        setStatus("Choose MoleController...");
 
         device = await navigator.bluetooth.requestDevice({
           filters: [{ services: [SERVICE_UUID] }],
@@ -911,6 +926,7 @@
 
         connected = true;
         setStatus(`Connected: ${device.name || "MoleController"}`);
+        vibrate(150);
       } catch (error) {
         setStatus(`Connection failed: ${error.message}`);
       }
@@ -929,7 +945,7 @@
     connectBtn.addEventListener("click", connectController);
     startBtn.addEventListener("click", startGame);
 
-    // Keyboard controls for testing (Keys 1-9, A-G)
+    // Keyboard support
     document.addEventListener("keydown", event => {
       if (event.repeat) return;
       const key = event.key.toUpperCase();
