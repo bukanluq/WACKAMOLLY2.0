@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Whack-a-Mole BLE</title>
+  <title>Whack-a-Mole BLE - Extreme Edition</title>
   <style>
     * {
       box-sizing: border-box;
@@ -20,6 +20,7 @@
       align-items: center;
       min-height: 100vh;
       padding: 20px;
+      overflow: hidden;
     }
 
     .game {
@@ -41,7 +42,7 @@
     p {
       color: #aaa;
       font-size: 0.95rem;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .toolbar {
@@ -75,7 +76,15 @@
     #status {
       font-size: 0.85rem;
       color: #fbbf24;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
+    }
+
+    #active-buff {
+      font-size: 0.9rem;
+      font-weight: bold;
+      color: #38bdf8;
+      min-height: 1.2em;
+      margin-bottom: 12px;
     }
 
     .stats {
@@ -115,34 +124,30 @@
       transition: transform 0.1s, background 0.1s;
     }
 
-    .hole.active {
-      background: #854d0e;
-      cursor: pointer;
+    .hole.active { background: #854d0e; cursor: pointer; }
+    .hole.active.bomb { background: #7f1d1d; }
+    .hole.active.golden { background: #ca8a04; }
+    .hole.active.clock { background: #1e3a8a; }
+    .hole.active.buff { background: #047857; }
+    .hole.active.scare { background: #581c87; }
+
+    .hole.hit { background: #166534; transform: scale(0.95); }
+    .hole.hit-bomb { background: #991b1b; transform: scale(0.95); }
+
+    /* Floating Particles & Effects */
+    .particle {
+      position: absolute;
+      pointer-events: none;
+      font-size: 1.2rem;
+      z-index: 25;
+      animation: popFly 0.8s ease-out forwards;
     }
 
-    .hole.active.bomb {
-      background: #7f1d1d;
+    @keyframes popFly {
+      0% { opacity: 1; transform: translate(0, 0) scale(1); }
+      100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.5); }
     }
 
-    .hole.active.golden {
-      background: #ca8a04;
-    }
-
-    .hole.active.clock {
-      background: #1e3a8a;
-    }
-
-    .hole.hit {
-      background: #166534;
-      transform: scale(0.95);
-    }
-
-    .hole.hit-bomb {
-      background: #991b1b;
-      transform: scale(0.95);
-    }
-
-    /* Flying Time Bonus Effect */
     .flying-bonus {
       position: absolute;
       font-size: 1.5rem;
@@ -160,7 +165,7 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0, 0, 0, 0.75);
+      background: rgba(0, 0, 0, 0.85);
       border-radius: 8px;
       display: flex;
       justify-content: center;
@@ -174,8 +179,43 @@
       transition: opacity 0.2s ease-in-out;
     }
 
-    #countdown-overlay.show {
+    #countdown-overlay.show { opacity: 1; }
+
+    /* Full-Screen Jumpscare Overlay */
+    #jumpscare-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #jumpscare-overlay.active {
       opacity: 1;
+      animation: flashScare 0.1s infinite alternate;
+    }
+
+    #jumpscare-face {
+      font-size: 18rem;
+      transform: scale(1);
+      animation: shakeFace 0.05s infinite alternate;
+    }
+
+    @keyframes flashScare {
+      0% { background: #000; }
+      100% { background: #991b1b; }
+    }
+
+    @keyframes shakeFace {
+      0% { transform: scale(1.2) rotate(-5deg); }
+      100% { transform: scale(1.5) rotate(5deg); }
     }
 
     #message {
@@ -198,10 +238,7 @@
       color: #fbbf24;
     }
 
-    #leaderboard-list {
-      list-style: none;
-    }
-
+    #leaderboard-list { list-style: none; }
     #leaderboard-list li {
       padding: 6px 0;
       border-bottom: 1px solid #3d3d3d;
@@ -209,16 +246,13 @@
       display: flex;
       justify-content: space-between;
     }
-
-    #leaderboard-list li:last-child {
-      border-bottom: none;
-    }
+    #leaderboard-list li:last-child { border-bottom: none; }
   </style>
 </head>
 <body>
   <main class="game">
-    <h1>🐹 Whack-a-Mole</h1>
-    <p>Watch out for combos, bombs, and time clocks!</p>
+    <h1>🐹 Whack-a-Mole EXTREME</h1>
+    <p>Buffs, Debuffs, Power-ups & Scary Surprises!</p>
 
     <div class="toolbar">
       <button id="connect">Connect Controller</button>
@@ -226,6 +260,7 @@
     </div>
 
     <p id="status">Controller disconnected</p>
+    <div id="active-buff"></div>
 
     <div class="stats">
       <div>Score: <strong id="score">0</strong></div>
@@ -248,6 +283,10 @@
     </section>
   </main>
 
+  <div id="jumpscare-overlay">
+    <div id="jumpscare-face">👹</div>
+  </div>
+
   <script>
     const SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0";
     const EVENT_UUID   = "12345678-1234-5678-1234-56789abcdef1";
@@ -256,12 +295,15 @@
     const connectBtn = document.querySelector("#connect");
     const startBtn = document.querySelector("#start");
     const statusEl = document.querySelector("#status");
+    const activeBuffEl = document.querySelector("#active-buff");
     const messageEl = document.querySelector("#message");
     const scoreEl = document.querySelector("#score");
     const comboEl = document.querySelector("#combo");
     const timeEl = document.querySelector("#time");
     const leaderboardList = document.querySelector("#leaderboard-list");
     const countdownOverlay = document.querySelector("#countdown-overlay");
+    const jumpscareOverlay = document.querySelector("#jumpscare-overlay");
+    const jumpscareFace = document.querySelector("#jumpscare-face");
     const boardContainer = document.querySelector(".board-container");
 
     let device = null;
@@ -276,12 +318,16 @@
     let leaderboard = [];
     let currentUser = "NO NAME";
 
-    // Tracking spawned targets per hole: { type: 'normal'|'golden'|'bomb'|'clock', timer: timeoutId }
+    // Buffs / Debuffs State
+    let scoreMultiplier = 1;
+    let frozen = false;
+    let invertedControls = false;
+    let buffTimer = null;
+
     let holesState = Array(16).fill(null).map(() => ({ type: null, timer: null }));
     let clocksSpawnedThisGame = 0;
     let targetClockCount = 5;
 
-    // Web Audio Context initialization
     let audioCtx = null;
 
     function initAudio() {
@@ -293,22 +339,17 @@
       }
     }
 
-    // --- High Volume Amplified Sound FX ---
     function playHitSound() {
       if (!audioCtx) return;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
-
       osc.type = 'sine';
       osc.frequency.setValueAtTime(450, audioCtx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(900, audioCtx.currentTime + 0.1);
-
-      gain.gain.setValueAtTime(0.7, audioCtx.currentTime); // Louder
+      gain.gain.setValueAtTime(0.7, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
-
       osc.connect(gain);
       gain.connect(audioCtx.destination);
-
       osc.start();
       osc.stop(audioCtx.currentTime + 0.12);
     }
@@ -318,20 +359,32 @@
       const now = audioCtx.currentTime;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
-
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(523.25, now);
       osc.frequency.setValueAtTime(659.25, now + 0.08);
       osc.frequency.setValueAtTime(783.99, now + 0.16);
-
-      gain.gain.setValueAtTime(0.8, now); // Louder
+      gain.gain.setValueAtTime(0.8, now);
       gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
-
       osc.connect(gain);
       gain.connect(audioCtx.destination);
-
       osc.start();
       osc.stop(now + 0.35);
+    }
+
+    function playBuffSound() {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(300, now);
+      osc.frequency.exponentialRampToValueAtTime(1200, now + 0.3);
+      gain.gain.setValueAtTime(0.8, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(now + 0.3);
     }
 
     function playClockSound() {
@@ -339,17 +392,13 @@
       const now = audioCtx.currentTime;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
-
       osc.type = 'square';
       osc.frequency.setValueAtTime(880, now);
       osc.frequency.setValueAtTime(1174.66, now + 0.1);
-
       gain.gain.setValueAtTime(0.6, now);
       gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
-
       osc.connect(gain);
       gain.connect(audioCtx.destination);
-
       osc.start();
       osc.stop(now + 0.25);
     }
@@ -360,46 +409,49 @@
       const bufferSize = audioCtx.sampleRate * 0.8;
       const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
       const data = buffer.getChannelData(0);
-
-      for (let i = 0; i < bufferSize; i++) {
-        data[i] = Math.random() * 2 - 1;
-      }
-
+      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
       const noise = audioCtx.createBufferSource();
       noise.buffer = buffer;
-
       const filter = audioCtx.createBiquadFilter();
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(1200, now);
       filter.frequency.linearRampToValueAtTime(80, now + 0.7);
-
-      // VERY LOUD explosion gain boost (gain: 3.5)
       const gain = audioCtx.createGain();
       gain.gain.setValueAtTime(3.5, now);
       gain.gain.exponentialRampToValueAtTime(0.01, now + 0.75);
-
       noise.connect(filter);
       filter.connect(gain);
       gain.connect(audioCtx.destination);
-
       noise.start(now);
       noise.stop(now + 0.75);
+    }
+
+    function playScreamSound() {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(1500, now);
+      osc.frequency.linearRampToValueAtTime(400, now + 0.5);
+      gain.gain.setValueAtTime(4.0, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.6);
     }
 
     function playBeepSound(freq) {
       if (!audioCtx) return;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
-
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-
       gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
-
       osc.connect(gain);
       gain.connect(audioCtx.destination);
-
       osc.start();
       osc.stop(audioCtx.currentTime + 0.15);
     }
@@ -410,14 +462,12 @@
       button.className = "hole";
       button.textContent = "🕳️";
       button.setAttribute("aria-label", `Hole ${id + 1}`);
-      button.addEventListener("click", () => hitHole(id));
+      button.addEventListener("click", () => processHit(id));
       board.appendChild(button);
       return button;
     });
 
-    function setStatus(text) {
-      statusEl.textContent = text;
-    }
+    function setStatus(text) { statusEl.textContent = text; }
 
     function clearAllHoles() {
       holesState.forEach((state, id) => {
@@ -428,17 +478,60 @@
       holesState = Array(16).fill(null).map(() => ({ type: null, timer: null }));
     }
 
+    function triggerJumpscare() {
+      const scaryFaces = ["👹", "💀", "👻", "🤡", "👾"];
+      jumpscareFace.textContent = scaryFaces[Math.floor(Math.random() * scaryFaces.length)];
+      jumpscareOverlay.classList.add("active");
+      playScreamSound();
+
+      setTimeout(() => {
+        jumpscareOverlay.classList.remove("active");
+      }, 700);
+    }
+
+    function applyRandomBuffOrDebuff() {
+      const effects = ["double", "freeze", "invert"];
+      const chosen = effects[Math.floor(Math.random() * effects.length)];
+      
+      clearTimeout(buffTimer);
+      scoreMultiplier = 1;
+      frozen = false;
+      invertedControls = false;
+
+      if (chosen === "double") {
+        scoreMultiplier = 2;
+        activeBuffEl.textContent = "⚡ BUFF: 2x Points Active! (8s)";
+        activeBuffEl.style.color = "#4ade80";
+        buffTimer = setTimeout(() => { resetBuffs(); }, 8000);
+      } else if (chosen === "freeze") {
+        frozen = true;
+        activeBuffEl.textContent = "❄️ DEBUFF: FROZEN! (3s)";
+        activeBuffEl.style.color = "#38bdf8";
+        buffTimer = setTimeout(() => { resetBuffs(); }, 3000);
+      } else if (chosen === "invert") {
+        invertedControls = true;
+        activeBuffEl.textContent = "🌀 DEBUFF: Inverted Controls! (6s)";
+        activeBuffEl.style.color = "#f43f5e";
+        buffTimer = setTimeout(() => { resetBuffs(); }, 6000);
+      }
+    }
+
+    function resetBuffs() {
+      scoreMultiplier = 1;
+      frozen = false;
+      invertedControls = false;
+      activeBuffEl.textContent = "";
+    }
+
     function spawnMultipleTargets() {
       if (!playing) return;
 
-      // Find available empty holes
       let emptyIndices = holesState
         .map((st, idx) => st.type === null ? idx : -1)
         .filter(idx => idx !== -1);
 
       if (emptyIndices.length === 0) return;
 
-      // Pick 1 to 3 random empty holes to spawn targets simultaneously
       let spawnCount = Math.min(emptyIndices.length, Math.floor(Math.random() * 3) + 1);
       
       for (let i = 0; i < spawnCount; i++) {
@@ -446,19 +539,24 @@
         let randomIndexPos = Math.floor(Math.random() * emptyIndices.length);
         let id = emptyIndices.splice(randomIndexPos, 1)[0];
 
-        // Determine type: Normal (50%), Golden (20%), Bomb (20%), Clock (10% if limit not reached)
         let rand = Math.random();
         let type = 'normal';
         let duration = 900;
 
-        if (clocksSpawnedThisGame < targetClockCount && rand < 0.12) {
+        if (clocksSpawnedThisGame < targetClockCount && rand < 0.10) {
           type = 'clock';
           duration = 800;
           clocksSpawnedThisGame++;
+        } else if (rand < 0.22) {
+          type = 'buff';
+          duration = 750;
         } else if (rand < 0.32) {
+          type = 'scare';
+          duration = 650;
+        } else if (rand < 0.47) {
           type = 'golden';
           duration = 600;
-        } else if (rand < 0.52) {
+        } else if (rand < 0.65) {
           type = 'bomb';
           duration = 750;
         } else {
@@ -471,6 +569,8 @@
         if (type === 'golden') holes[id].textContent = "🌟";
         if (type === 'bomb') holes[id].textContent = "💣";
         if (type === 'clock') holes[id].textContent = "⏳";
+        if (type === 'buff') holes[id].textContent = "🎁";
+        if (type === 'scare') holes[id].textContent = "👻";
 
         holesState[id].type = type;
         holesState[id].timer = setTimeout(() => {
@@ -483,33 +583,56 @@
       }
     }
 
-    function hitHole(id) {
-      if (!playing || holesState[id].type === null) return;
+    function processHit(rawId) {
+      if (!playing || frozen) return;
+
+      let id = rawId;
+      if (invertedControls) {
+        id = 15 - rawId; // Reverse mappings across the grid
+      }
+
+      if (holesState[id].type === null) return;
 
       let type = holesState[id].type;
       clearTimeout(holesState[id].timer);
       holesState[id] = { type: null, timer: null };
 
-      if (type === 'bomb') {
+      if (type === 'scare') {
+        triggerJumpscare();
+        holes[id].className = "hole hit-bomb";
+        holes[id].textContent = "💀";
+        combo = 0;
+        comboEl.textContent = combo + "X";
+        messageEl.textContent = "AAAHHH! Scary surprise!";
+      } else if (type === 'bomb') {
         playBombSound();
+        if (Math.random() < 0.35) triggerJumpscare(); // 35% chance jumpscare on bomb hit
         holes[id].className = "hole hit-bomb";
         holes[id].textContent = "💥";
         score = Math.max(0, score - 1);
-        combo = 0; // Reset combo on bomb
+        combo = 0;
         scoreEl.textContent = score;
         comboEl.textContent = combo + "X";
-        messageEl.textContent = "Ouch! Hit a bomb! (-1 pt, Combo Lost)";
+        messageEl.textContent = "Ouch! Hit a bomb! (-1 pt)";
       } else if (type === 'golden') {
         playGoldenSound();
+        createParticles(holes[id], "✨");
         holes[id].className = "hole hit";
-        holes[id].textContent = "✨";
+        holes[id].textContent = "🌟";
         combo++;
-        score += 2;
+        score += (2 * scoreMultiplier);
         scoreEl.textContent = score;
         comboEl.textContent = combo + "X";
-        messageEl.textContent = "Golden hit! (+2 pts)";
+        messageEl.textContent = `Golden hit! (+${2 * scoreMultiplier} pts)`;
+      } else if (type === 'buff') {
+        playBuffSound();
+        createParticles(holes[id], "⚡");
+        holes[id].className = "hole hit";
+        holes[id].textContent = "🎁";
+        applyRandomBuffOrDebuff();
       } else if (type === 'clock') {
         playClockSound();
+        createParticles(holes[id], "⏱️");
         holes[id].className = "hole hit";
         holes[id].textContent = "⏱️";
         timeLeft += 5;
@@ -521,7 +644,7 @@
         holes[id].className = "hole hit";
         holes[id].textContent = "💥";
         combo++;
-        score += 1;
+        score += (1 * scoreMultiplier);
         scoreEl.textContent = score;
         comboEl.textContent = combo + "X";
         messageEl.textContent = "Nice hit!";
@@ -531,6 +654,28 @@
         holes[id].className = "hole";
         holes[id].textContent = "🕳️";
       }, 180);
+    }
+
+    function createParticles(element, emoji) {
+      const rect = element.getBoundingClientRect();
+      const boardRect = boardContainer.getBoundingClientRect();
+
+      for (let i = 0; i < 6; i++) {
+        const p = document.createElement("div");
+        p.className = "particle";
+        p.textContent = emoji;
+
+        const dx = (Math.random() - 0.5) * 120 + "px";
+        const dy = (Math.random() - 0.5) * 120 + "px";
+        p.style.setProperty('--dx', dx);
+        p.style.setProperty('--dy', dy);
+
+        p.style.left = (rect.left - boardRect.left + rect.width / 2 - 10) + "px";
+        p.style.top = (rect.top - boardRect.top + rect.height / 2 - 10) + "px";
+
+        boardContainer.appendChild(p);
+        setTimeout(() => p.remove(), 800);
+      }
     }
 
     function triggerFlyingBonus(holeElement) {
@@ -551,9 +696,7 @@
         bonusEl.style.opacity = "0";
       }, 50);
 
-      setTimeout(() => {
-        bonusEl.remove();
-      }, 850);
+      setTimeout(() => bonusEl.remove(), 850);
     }
 
     function startGame() {
@@ -568,13 +711,14 @@
 
       clearInterval(gameTimer);
       clearInterval(spawnInterval);
+      resetBuffs();
       clearAllHoles();
 
       score = 0;
       combo = 0;
       timeLeft = 30;
       clocksSpawnedThisGame = 0;
-      targetClockCount = Math.floor(Math.random() * 3) + 5; // 5 to 7 clocks per game
+      targetClockCount = Math.floor(Math.random() * 3) + 5;
       playing = false;
 
       scoreEl.textContent = score;
@@ -586,10 +730,9 @@
         playing = true;
         messageEl.textContent = `Go ${currentUser}! Catch the moles!`;
         
-        // Spawn multiple targets continuously every 600ms
         spawnInterval = setInterval(() => {
           spawnMultipleTargets();
-        }, 600);
+        }, 550);
 
         gameTimer = setInterval(() => {
           timeLeft--;
@@ -629,6 +772,7 @@
       playing = false;
       clearInterval(gameTimer);
       clearInterval(spawnInterval);
+      resetBuffs();
       clearAllHoles();
 
       startBtn.disabled = !connected;
@@ -671,6 +815,7 @@
           playing = false;
           clearInterval(gameTimer);
           clearInterval(spawnInterval);
+          resetBuffs();
           clearAllHoles();
 
           startBtn.disabled = true;
@@ -700,7 +845,7 @@
       const pressed = data.getUint8(1) === 1;
 
       if (pressed && id < 16) {
-        hitHole(id);
+        processHit(id);
       }
     }
 
@@ -712,7 +857,7 @@
       if (event.repeat) return;
       const key = event.key.toUpperCase();
       const id = "123456789ABCDEFG".indexOf(key);
-      if (id >= 0) hitHole(id);
+      if (id >= 0) processHit(id);
     });
   </script>
 </body>
