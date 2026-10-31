@@ -30,6 +30,7 @@
       max-width: 450px;
       text-align: center;
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      position: relative;
     }
 
     h1 {
@@ -91,11 +92,15 @@
       color: #4ade80;
     }
 
+    .board-container {
+      position: relative;
+      margin-bottom: 20px;
+    }
+
     #board {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 10px;
-      margin-bottom: 20px;
     }
 
     .hole {
@@ -118,6 +123,31 @@
     .hole.hit {
       background: #166534;
       transform: scale(0.95);
+    }
+
+    /* Overlay for 3-Second Countdown */
+    #countdown-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.75);
+      border-radius: 8px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 5rem;
+      font-weight: bold;
+      color: #fbbf24;
+      z-index: 10;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease-in-out;
+    }
+
+    #countdown-overlay.show {
+      opacity: 1;
     }
 
     #message {
@@ -174,7 +204,10 @@
       <div>Time: <strong id="time">30</strong>s</div>
     </div>
 
-    <div id="board" aria-label="Sixteen-hole game board"></div>
+    <div class="board-container">
+      <div id="board" aria-label="Sixteen-hole game board"></div>
+      <div id="countdown-overlay">3</div>
+    </div>
 
     <p id="message">Connect your controller to begin.</p>
 
@@ -198,6 +231,7 @@
     const scoreEl = document.querySelector("#score");
     const timeEl = document.querySelector("#time");
     const leaderboardList = document.querySelector("#leaderboard-list");
+    const countdownOverlay = document.querySelector("#countdown-overlay");
 
     let device = null;
     let characteristic = null;
@@ -272,8 +306,8 @@
       if (playing) spawnMole();
     }
 
-    async function startGame() {
-      // Ask for username before countdown
+    function startGame() {
+      // Ask for username before starting
       let username = prompt("Enter your username:", "NO NAME");
       if (!username || username.trim() === "") {
         currentUser = "NO NAME";
@@ -281,34 +315,51 @@
         currentUser = username.trim();
       }
 
-      startBtn.disabled = true;
       clearInterval(gameTimer);
       clearTimeout(moleTimer);
       clearMole();
 
       score = 0;
       timeLeft = 30;
+      playing = false; // Keep false during countdown
+
       scoreEl.textContent = score;
       timeEl.textContent = timeLeft;
+      startBtn.disabled = true;
 
-      // 3-Second Countdown Sequence
-      for (let i = 3; i > 0; i--) {
-        messageEl.textContent = `Get ready ${currentUser}! Starting in ${i}...`;
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+      // Start 3-second countdown
+      runCountdown(3, () => {
+        playing = true;
+        messageEl.textContent = `Go ${currentUser}! Catch the moles!`;
+        spawnMole();
 
-      messageEl.textContent = `Go! Catch the moles, ${currentUser}!`;
-      playing = true;
-      moleDuration = 950;
+        gameTimer = setInterval(() => {
+          timeLeft--;
+          timeEl.textContent = timeLeft;
 
-      spawnMole();
+          if (timeLeft <= 0) {
+            endGame();
+          }
+        }, 1000);
+      });
+    }
 
-      gameTimer = setInterval(() => {
-        timeLeft--;
-        timeEl.textContent = timeLeft;
+    function runCountdown(seconds, callback) {
+      let count = seconds;
+      countdownOverlay.textContent = count;
+      countdownOverlay.classList.add("show");
+      messageEl.textContent = `Get ready, ${currentUser}...`;
 
-        if (timeLeft <= 0) {
-          endGame();
+      const countdownInterval = setInterval(() => {
+        count--;
+        if (count > 0) {
+          countdownOverlay.textContent = count;
+        } else if (count === 0) {
+          countdownOverlay.textContent = "GO!";
+        } else {
+          clearInterval(countdownInterval);
+          countdownOverlay.classList.remove("show");
+          callback();
         }
       }, 1000);
     }
@@ -332,4 +383,74 @@
 
       leaderboardList.innerHTML = "";
       leaderboard.forEach((entry, index) => {
-        const li = document.
+        const li = document.createElement("li");
+        li.innerHTML = `<span>${index + 1}. ${entry.name}</span><strong>${entry.score} pts</strong>`;
+        leaderboardList.appendChild(li);
+      });
+    }
+
+    async function connectController() {
+      if (!navigator.bluetooth) {
+        setStatus("Web Bluetooth unavailable. Use Chrome/Edge over HTTPS or Localhost.");
+        return;
+      }
+
+      try {
+        setStatus("Choose MoleController in the Bluetooth picker...");
+
+        device = await navigator.bluetooth.requestDevice({
+          filters: [{ services: [SERVICE_UUID] }],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        device.addEventListener("gattserverdisconnected", () => {
+          connected = false;
+          playing = false;
+          clearInterval(gameTimer);
+          clearTimeout(moleTimer);
+          clearMole();
+
+          startBtn.disabled = true;
+          setStatus("Controller disconnected");
+          messageEl.textContent = "Reconnect your controller to play.";
+        });
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        characteristic = await service.getCharacteristic(EVENT_UUID);
+
+        await characteristic.startNotifications();
+        characteristic.addEventListener("characteristicvaluechanged", onButtonEvent);
+
+        connected = true;
+        startBtn.disabled = false;
+        setStatus(`Connected: ${device.name || "MoleController"}`);
+        messageEl.textContent = "Ready! Start the game.";
+      } catch (error) {
+        setStatus(`Connection failed: ${error.message}`);
+      }
+    }
+
+    function onButtonEvent(event) {
+      const data = event.target.value;
+      const id = data.getUint8(0);
+      const pressed = data.getUint8(1) === 1;
+
+      if (pressed && id < 16) {
+        hitHole(id);
+      }
+    }
+
+    connectBtn.addEventListener("click", connectController);
+    startBtn.addEventListener("click", startGame);
+
+    // Keyboard controls for testing (Keys 1-9, A-G)
+    document.addEventListener("keydown", event => {
+      if (event.repeat) return;
+      const key = event.key.toUpperCase();
+      const id = "123456789ABCDEFG".indexOf(key);
+      if (id >= 0) hitHole(id);
+    });
+  </script>
+</body>
+</html>
