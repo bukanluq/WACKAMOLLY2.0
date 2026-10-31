@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>Whack-a-Mole Mobile Extreme</title>
+  <title>Whack-a-Mole Supabase Edition</title>
+  <!-- Load Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     * {
       box-sizing: border-box;
@@ -129,9 +131,7 @@
       transition: transform 0.08s, background 0.08s;
     }
 
-    .hole:active {
-      transform: scale(0.92);
-    }
+    .hole:active { transform: scale(0.92); }
 
     .hole.active { background: #854d0e; }
     .hole.active.bomb { background: #7f1d1d; }
@@ -143,7 +143,6 @@
     .hole.hit { background: #166534; transform: scale(0.92); }
     .hole.hit-bomb { background: #991b1b; transform: scale(0.92); }
 
-    /* Frost Freeze Overlay */
     #frost-overlay {
       position: absolute;
       top: 0;
@@ -168,7 +167,6 @@
 
     #frost-overlay.show { opacity: 1; }
 
-    /* Floating Particles & Effects */
     .particle {
       position: absolute;
       pointer-events: none;
@@ -192,7 +190,6 @@
       transition: all 0.8s ease-out;
     }
 
-    /* Countdown Overlay */
     #countdown-overlay {
       position: absolute;
       top: 0;
@@ -215,7 +212,6 @@
 
     #countdown-overlay.show { opacity: 1; }
 
-    /* Jumpscare Overlay */
     #jumpscare-overlay {
       position: fixed;
       top: 0;
@@ -287,7 +283,7 @@
       cursor: pointer;
     }
 
-    #leaderboard-list { list-style: none; }
+    #leaderboard-list { list-style: none; min-height: 110px; }
     #leaderboard-list li {
       padding: 4px 0;
       border-bottom: 1px solid #3d3d3d;
@@ -296,12 +292,25 @@
       justify-content: space-between;
     }
     #leaderboard-list li:last-child { border-bottom: none; }
+
+    .pagination-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      font-size: 0.8rem;
+    }
+
+    .pagination-controls button {
+      padding: 4px 8px;
+      font-size: 0.75rem;
+    }
   </style>
 </head>
 <body>
   <main class="game">
     <h1>🐹 Whack-a-Mole</h1>
-    <p>Tap holes with Touch, Mouse, or Controller!</p>
+    <p>Supabase Cloud Leaderboard Enabled!</p>
 
     <div class="toolbar">
       <button id="connect">Connect BLE</button>
@@ -327,7 +336,7 @@
 
     <section class="leaderboard-container">
       <div class="leaderboard-header">
-        <h2>🏆 Leaderboard</h2>
+        <h2>🏆 Cloud Leaderboard</h2>
         <select id="mode-selector">
           <option value="30">30s</option>
           <option value="60">1 Min</option>
@@ -335,8 +344,13 @@
         </select>
       </div>
       <ul id="leaderboard-list">
-        <li><em>No scores yet</em></li>
+        <li><em>Loading scores...</em></li>
       </ul>
+      <div class="pagination-controls">
+        <button id="prev-page">◀ Prev</button>
+        <span id="page-indicator">Page 1</span>
+        <button id="next-page">Next ▶</button>
+      </div>
     </section>
   </main>
 
@@ -345,6 +359,11 @@
   </div>
 
   <script>
+    // --- SUPABASE CONFIGURATION ---
+    const SUPABASE_URL = "https://elmhmarmoeqhzbskmffs.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVsbWhtYXJtb2VxaHpic2ktbWZmcyIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzkzNDIyMDQ5LCJleHAiOjIxMDg5OTgwNDl9.H506mqhZFrAxRAiJSC3ojOJtpGq-xmQL3UbZY8FruJA";
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
     const SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0";
     const EVENT_UUID   = "12345678-1234-5678-1234-56789abcdef1";
 
@@ -364,6 +383,9 @@
     const jumpscareOverlay = document.querySelector("#jumpscare-overlay");
     const jumpscareFace = document.querySelector("#jumpscare-face");
     const boardContainer = document.querySelector(".board-container");
+    const prevPageBtn = document.querySelector("#prev-page");
+    const nextPageBtn = document.querySelector("#next-page");
+    const pageIndicator = document.querySelector("#page-indicator");
 
     let device = null;
     let characteristic = null;
@@ -376,7 +398,8 @@
     let gameTimer = null;
     let spawnInterval = null;
     
-    let leaderboards = { '30': [], '60': [], '120': [] };
+    let currentPage = 1;
+    const pageSize = 5;
     let currentUser = "NO NAME";
 
     let scoreMultiplier = 1;
@@ -399,7 +422,6 @@
       }
     }
 
-    // Trigger haptic vibration feedback if supported by device
     function vibrate(pattern) {
       if ("vibrate" in navigator) {
         navigator.vibrate(pattern);
@@ -523,7 +545,6 @@
       osc.stop(audioCtx.currentTime + 0.15);
     }
 
-    // Build grid of 16 holes with touch/click responsiveness
     const holes = Array.from({ length: 16 }, (_, id) => {
       const button = document.createElement("button");
       button.className = "hole";
@@ -550,7 +571,7 @@
       jumpscareFace.textContent = scaryFaces[Math.floor(Math.random() * scaryFaces.length)];
       jumpscareOverlay.classList.add("active");
       playScreamSound();
-      vibrate([200, 100, 200, 100, 400]); // Heavy shudder on jumpscare
+      vibrate([200, 100, 200, 100, 400]);
 
       setTimeout(() => {
         jumpscareOverlay.classList.remove("active");
@@ -678,7 +699,7 @@
         messageEl.textContent = "AAAHHH! Scary surprise!";
       } else if (type === 'bomb') {
         playBombSound();
-        vibrate([300, 100, 300]); // Heavy impact vibration for bomb
+        vibrate([300, 100, 300]);
         if (Math.random() < 0.35) triggerJumpscare();
         holes[id].className = "hole hit-bomb";
         holes[id].textContent = "💥";
@@ -689,7 +710,7 @@
         messageEl.textContent = "Ouch! Hit a bomb! (-1 pt)";
       } else if (type === 'golden') {
         playGoldenSound();
-        vibrate(80); // Medium haptic pulse
+        vibrate(80);
         createParticles(holes[id], "✨");
         holes[id].className = "hole hit";
         holes[id].textContent = "🌟";
@@ -717,7 +738,7 @@
         triggerFlyingBonus(holes[id]);
       } else {
         playHitSound();
-        vibrate(40); // Light snappy haptic pulse for regular hits
+        vibrate(40);
         holes[id].className = "hole hit";
         holes[id].textContent = "💥";
         combo++;
@@ -789,6 +810,7 @@
       }
 
       modeSelector.value = gameDuration.toString();
+      currentPage = 1;
 
       let username = prompt("Enter your username:", "NO NAME");
       if (!username || username.trim() === "") {
@@ -856,7 +878,7 @@
       }, 1000);
     }
 
-    function endGame() {
+    async function endGame() {
       playing = false;
       clearInterval(gameTimer);
       clearInterval(spawnInterval);
@@ -864,37 +886,101 @@
       clearAllHoles();
 
       messageEl.textContent = `Game over, ${currentUser}! Final score: ${score}`;
-      updateLeaderboard(currentUser, score, gameDuration);
       vibrate([100, 100, 200]);
+
+      await saveScoreToSupabase(currentUser, score, gameDuration);
+      fetchLeaderboard();
     }
 
-    function updateLeaderboard(name, finalScore, duration) {
-      const modeKey = duration.toString();
-      leaderboards[modeKey].push({ name, score: finalScore });
-      leaderboards[modeKey].sort((a, b) => b.score - a.score);
-      leaderboards[modeKey] = leaderboards[modeKey].slice(0, 5);
+    async function saveScoreToSupabase(username, score, duration) {
+      try {
+        const { error: insertError } = await supabaseClient
+          .from('leaderboard')
+          .insert([{ username, score, duration }]);
 
-      renderLeaderboard();
+        if (insertError) {
+          console.error("Error inserting score:", insertError.message);
+          return;
+        }
+
+        const { data: allScores, error: fetchError } = await supabaseClient
+          .from('leaderboard')
+          .select('id')
+          .eq('duration', duration)
+          .order('score', { ascending: false });
+
+        if (fetchError) {
+          console.error("Error fetching scores for pruning:", fetchError.message);
+          return;
+        }
+
+        if (allScores && allScores.length > 20) {
+          const idsToDelete = allScores.slice(20).map(row => row.id);
+          await supabaseClient
+            .from('leaderboard')
+            .delete()
+            .in('id', idsToDelete);
+        }
+      } catch (err) {
+        console.error("Supabase exception:", err);
+      }
     }
 
-    function renderLeaderboard() {
-      const activeMode = modeSelector.value;
-      const list = leaderboards[activeMode];
+    async function fetchLeaderboard() {
+      const activeDuration = parseInt(modeSelector.value);
+      const startRange = (currentPage - 1) * pageSize;
+      const endRange = startRange + pageSize - 1;
 
-      leaderboardList.innerHTML = "";
-      if (list.length === 0) {
-        leaderboardList.innerHTML = "<li><em>No scores yet</em></li>";
+      leaderboardList.innerHTML = "<li><em>Loading...</em></li>";
+
+      const { data, error, count } = await supabaseClient
+        .from('leaderboard')
+        .select('*', { count: 'exact' })
+        .eq('duration', activeDuration)
+        .order('score', { ascending: false })
+        .range(startRange, endRange);
+
+      if (error) {
+        leaderboardList.innerHTML = "<li><em>Error loading database</em></li>";
+        console.error(error.message);
         return;
       }
 
-      list.forEach((entry, index) => {
+      leaderboardList.innerHTML = "";
+      if (!data || data.length === 0) {
+        leaderboardList.innerHTML = "<li><em>No scores yet</em></li>";
+        pageIndicator.textContent = `Page ${currentPage}`;
+        return;
+      }
+
+      data.forEach((entry, index) => {
+        const rank = startRange + index + 1;
         const li = document.createElement("li");
-        li.innerHTML = `<span>${index + 1}. ${entry.name}</span><strong>${entry.score} pts</strong>`;
+        li.innerHTML = `<span>${rank}. ${entry.username}</span><strong>${entry.score} pts</strong>`;
         leaderboardList.appendChild(li);
       });
+
+      pageIndicator.textContent = `Page ${currentPage}`;
     }
 
-    modeSelector.addEventListener("change", renderLeaderboard);
+    prevPageBtn.addEventListener("click", () => {
+      if (currentPage > 1) {
+        currentPage--;
+        fetchLeaderboard();
+      }
+    });
+
+    nextPageBtn.addEventListener("click", () => {
+      if (currentPage * pageSize < 20) {
+        currentPage++;
+        fetchLeaderboard();
+      }
+    });
+
+    modeSelector.addEventListener("change", () => {
+      currentPage = 1;
+      fetchLeaderboard();
+    });
 
     async function connectController() {
       initAudio();
@@ -945,13 +1031,14 @@
     connectBtn.addEventListener("click", connectController);
     startBtn.addEventListener("click", startGame);
 
-    // Keyboard support
     document.addEventListener("keydown", event => {
       if (event.repeat) return;
       const key = event.key.toUpperCase();
       const id = "123456789ABCDEFG".indexOf(key);
       if (id >= 0) processHit(id);
     });
+
+    fetchLeaderboard();
   </script>
 </body>
 </html>
