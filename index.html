@@ -20,7 +20,7 @@
       align-items: center;
       min-height: 100vh;
       padding: 20px;
-      overflow: hidden;
+      overflow-x: hidden;
     }
 
     .game {
@@ -80,7 +80,7 @@
     }
 
     #active-buff {
-      font-size: 0.9rem;
+      font-size: 0.95rem;
       font-weight: bold;
       color: #38bdf8;
       min-height: 1.2em;
@@ -133,6 +133,31 @@
 
     .hole.hit { background: #166534; transform: scale(0.95); }
     .hole.hit-bomb { background: #991b1b; transform: scale(0.95); }
+
+    /* Frost Freeze Overlay */
+    #frost-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(56, 189, 248, 0.25);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-size: 2rem;
+      font-weight: bold;
+      color: #e0f2fe;
+      z-index: 15;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease-in-out;
+      border: 3px dashed #38bdf8;
+    }
+
+    #frost-overlay.show { opacity: 1; }
 
     /* Floating Particles & Effects */
     .particle {
@@ -231,11 +256,26 @@
       text-align: left;
     }
 
+    .leaderboard-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
     .leaderboard-container h2 {
       font-size: 1.1rem;
-      margin-bottom: 10px;
-      text-align: center;
       color: #fbbf24;
+    }
+
+    #mode-selector {
+      background: #111;
+      color: #fff;
+      border: 1px solid #444;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      cursor: pointer;
     }
 
     #leaderboard-list { list-style: none; }
@@ -270,13 +310,21 @@
 
     <div class="board-container">
       <div id="board" aria-label="Sixteen-hole game board"></div>
+      <div id="frost-overlay">❄️ FROZEN ❄️</div>
       <div id="countdown-overlay">3</div>
     </div>
 
     <p id="message">Connect your controller to begin.</p>
 
     <section class="leaderboard-container">
-      <h2>🏆 Leaderboard</h2>
+      <div class="leaderboard-header">
+        <h2>🏆 Leaderboard</h2>
+        <select id="mode-selector">
+          <option value="30">30 Seconds</option>
+          <option value="60">1 Minute</option>
+          <option value="120">2 Minutes</option>
+        </select>
+      </div>
       <ul id="leaderboard-list">
         <li><em>No scores yet</em></li>
       </ul>
@@ -301,7 +349,9 @@
     const comboEl = document.querySelector("#combo");
     const timeEl = document.querySelector("#time");
     const leaderboardList = document.querySelector("#leaderboard-list");
+    const modeSelector = document.querySelector("#mode-selector");
     const countdownOverlay = document.querySelector("#countdown-overlay");
+    const frostOverlay = document.querySelector("#frost-overlay");
     const jumpscareOverlay = document.querySelector("#jumpscare-overlay");
     const jumpscareFace = document.querySelector("#jumpscare-face");
     const boardContainer = document.querySelector(".board-container");
@@ -312,13 +362,19 @@
     let playing = false;
     let score = 0;
     let combo = 0;
+    let gameDuration = 30; // Default 30 seconds
     let timeLeft = 30;
     let gameTimer = null;
     let spawnInterval = null;
-    let leaderboard = [];
+    
+    // Separate leaderboards stored by mode key ('30', '60', '120')
+    let leaderboards = {
+      '30': [],
+      '60': [],
+      '120': []
+    };
     let currentUser = "NO NAME";
 
-    // Buffs / Debuffs State
     let scoreMultiplier = 1;
     let frozen = false;
     let invertedControls = false;
@@ -497,6 +553,7 @@
       scoreMultiplier = 1;
       frozen = false;
       invertedControls = false;
+      frostOverlay.classList.remove("show");
 
       if (chosen === "double") {
         scoreMultiplier = 2;
@@ -505,6 +562,7 @@
         buffTimer = setTimeout(() => { resetBuffs(); }, 8000);
       } else if (chosen === "freeze") {
         frozen = true;
+        frostOverlay.classList.add("show");
         activeBuffEl.textContent = "❄️ DEBUFF: FROZEN! (3s)";
         activeBuffEl.style.color = "#38bdf8";
         buffTimer = setTimeout(() => { resetBuffs(); }, 3000);
@@ -520,6 +578,7 @@
       scoreMultiplier = 1;
       frozen = false;
       invertedControls = false;
+      frostOverlay.classList.remove("show");
       activeBuffEl.textContent = "";
     }
 
@@ -532,7 +591,7 @@
 
       if (emptyIndices.length === 0) return;
 
-      let spawnCount = Math.min(emptyIndices.length, Math.floor(Math.random() * 3) + 1);
+      let spawnCount = Math.min(emptyIndices.length, Math.floor(Math.random() * 2) + 1);
       
       for (let i = 0; i < spawnCount; i++) {
         if (emptyIndices.length === 0) break;
@@ -541,27 +600,27 @@
 
         let rand = Math.random();
         let type = 'normal';
-        let duration = 900;
+        let duration = 1500; // Slower stay time (~40% longer)
 
         if (clocksSpawnedThisGame < targetClockCount && rand < 0.10) {
           type = 'clock';
-          duration = 800;
+          duration = 1400;
           clocksSpawnedThisGame++;
         } else if (rand < 0.22) {
           type = 'buff';
-          duration = 750;
+          duration = 1300;
         } else if (rand < 0.32) {
           type = 'scare';
-          duration = 650;
+          duration = 1200;
         } else if (rand < 0.47) {
           type = 'golden';
-          duration = 600;
+          duration = 1100;
         } else if (rand < 0.65) {
           type = 'bomb';
-          duration = 750;
+          duration = 1300;
         } else {
           type = 'normal';
-          duration = 900;
+          duration = 1600;
         }
 
         holes[id].className = `hole active ${type}`;
@@ -606,7 +665,7 @@
         messageEl.textContent = "AAAHHH! Scary surprise!";
       } else if (type === 'bomb') {
         playBombSound();
-        if (Math.random() < 0.35) triggerJumpscare(); // 35% chance jumpscare on bomb hit
+        if (Math.random() < 0.35) triggerJumpscare();
         holes[id].className = "hole hit-bomb";
         holes[id].textContent = "💥";
         score = Math.max(0, score - 1);
@@ -702,6 +761,19 @@
     function startGame() {
       initAudio();
 
+      // Ask for game duration choice
+      let choice = prompt("Choose game duration:\n1) 30 Seconds\n2) 1 Minute (60s)\n3) 2 Minutes (120s)", "30");
+      if (choice === "2" || choice === "60" || choice === "1 Minute") {
+        gameDuration = 60;
+      } else if (choice === "3" || choice === "120" || choice === "2 Minutes") {
+        gameDuration = 120;
+      } else {
+        gameDuration = 30;
+      }
+
+      // Sync dropdown selector to chosen game mode
+      modeSelector.value = gameDuration.toString();
+
       let username = prompt("Enter your username:", "NO NAME");
       if (!username || username.trim() === "") {
         currentUser = "NO NAME";
@@ -716,9 +788,9 @@
 
       score = 0;
       combo = 0;
-      timeLeft = 30;
+      timeLeft = gameDuration;
       clocksSpawnedThisGame = 0;
-      targetClockCount = Math.floor(Math.random() * 3) + 5;
+      targetClockCount = gameDuration === 120 ? 12 : (gameDuration === 60 ? 7 : 4);
       playing = false;
 
       scoreEl.textContent = score;
@@ -732,7 +804,7 @@
         
         spawnInterval = setInterval(() => {
           spawnMultipleTargets();
-        }, 550);
+        }, 850); // Slower spawn rhythm
 
         gameTimer = setInterval(() => {
           timeLeft--;
@@ -778,21 +850,36 @@
       startBtn.disabled = !connected;
       messageEl.textContent = `Game over, ${currentUser}! Final score: ${score}`;
 
-      updateLeaderboard(currentUser, score);
+      updateLeaderboard(currentUser, score, gameDuration);
     }
 
-    function updateLeaderboard(name, finalScore) {
-      leaderboard.push({ name, score: finalScore });
-      leaderboard.sort((a, b) => b.score - a.score);
-      leaderboard = leaderboard.slice(0, 5);
+    function updateLeaderboard(name, finalScore, duration) {
+      const modeKey = duration.toString();
+      leaderboards[modeKey].push({ name, score: finalScore });
+      leaderboards[modeKey].sort((a, b) => b.score - a.score);
+      leaderboards[modeKey] = leaderboards[modeKey].slice(0, 5); // Keep top 5
+
+      renderLeaderboard();
+    }
+
+    function renderLeaderboard() {
+      const activeMode = modeSelector.value;
+      const list = leaderboards[activeMode];
 
       leaderboardList.innerHTML = "";
-      leaderboard.forEach((entry, index) => {
+      if (list.length === 0) {
+        leaderboardList.innerHTML = "<li><em>No scores yet</em></li>";
+        return;
+      }
+
+      list.forEach((entry, index) => {
         const li = document.createElement("li");
         li.innerHTML = `<span>${index + 1}. ${entry.name}</span><strong>${entry.score} pts</strong>`;
         leaderboardList.appendChild(li);
       });
     }
+
+    modeSelector.addEventListener("change", renderLeaderboard);
 
     async function connectController() {
       initAudio();
