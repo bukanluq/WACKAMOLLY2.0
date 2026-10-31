@@ -272,8 +272,8 @@
       if (playing) spawnMole();
     }
 
-    function startGame() {
-      // Ask for username before starting
+    async function startGame() {
+      // Ask for username before countdown
       let username = prompt("Enter your username:", "NO NAME");
       if (!username || username.trim() === "") {
         currentUser = "NO NAME";
@@ -281,19 +281,25 @@
         currentUser = username.trim();
       }
 
+      startBtn.disabled = true;
       clearInterval(gameTimer);
       clearTimeout(moleTimer);
       clearMole();
 
       score = 0;
       timeLeft = 30;
-      playing = true;
-      moleDuration = 950;
-
       scoreEl.textContent = score;
       timeEl.textContent = timeLeft;
-      messageEl.textContent = `Go ${currentUser}! Catch the moles!`;
-      startBtn.disabled = true;
+
+      // 3-Second Countdown Sequence
+      for (let i = 3; i > 0; i--) {
+        messageEl.textContent = `Get ready ${currentUser}! Starting in ${i}...`;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      messageEl.textContent = `Go! Catch the moles, ${currentUser}!`;
+      playing = true;
+      moleDuration = 950;
 
       spawnMole();
 
@@ -326,74 +332,4 @@
 
       leaderboardList.innerHTML = "";
       leaderboard.forEach((entry, index) => {
-        const li = document.createElement("li");
-        li.innerHTML = `<span>${index + 1}. ${entry.name}</span><strong>${entry.score} pts</strong>`;
-        leaderboardList.appendChild(li);
-      });
-    }
-
-    async function connectController() {
-      if (!navigator.bluetooth) {
-        setStatus("Web Bluetooth unavailable. Use Chrome/Edge over HTTPS or Localhost.");
-        return;
-      }
-
-      try {
-        setStatus("Choose MoleController in the Bluetooth picker...");
-
-        device = await navigator.bluetooth.requestDevice({
-          filters: [{ services: [SERVICE_UUID] }],
-          optionalServices: [SERVICE_UUID]
-        });
-
-        device.addEventListener("gattserverdisconnected", () => {
-          connected = false;
-          playing = false;
-          clearInterval(gameTimer);
-          clearTimeout(moleTimer);
-          clearMole();
-
-          startBtn.disabled = true;
-          setStatus("Controller disconnected");
-          messageEl.textContent = "Reconnect your controller to play.";
-        });
-
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService(SERVICE_UUID);
-        characteristic = await service.getCharacteristic(EVENT_UUID);
-
-        await characteristic.startNotifications();
-        characteristic.addEventListener("characteristicvaluechanged", onButtonEvent);
-
-        connected = true;
-        startBtn.disabled = false;
-        setStatus(`Connected: ${device.name || "MoleController"}`);
-        messageEl.textContent = "Ready! Start the game.";
-      } catch (error) {
-        setStatus(`Connection failed: ${error.message}`);
-      }
-    }
-
-    function onButtonEvent(event) {
-      const data = event.target.value;
-      const id = data.getUint8(0);
-      const pressed = data.getUint8(1) === 1;
-
-      if (pressed && id < 16) {
-        hitHole(id);
-      }
-    }
-
-    connectBtn.addEventListener("click", connectController);
-    startBtn.addEventListener("click", startGame);
-
-    // Keyboard controls for testing (Keys 1-9, A-G)
-    document.addEventListener("keydown", event => {
-      if (event.repeat) return;
-      const key = event.key.toUpperCase();
-      const id = "123456789ABCDEFG".indexOf(key);
-      if (id >= 0) hitHole(id);
-    });
-  </script>
-</body>
-</html>
+        const li = document.
