@@ -3,30 +3,397 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Whack-a-Mole</title>
-  <link rel="stylesheet" href="style.css">
+  <title>Whack-a-Mole BLE</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    body {
+      background-color: #121212;
+      color: #ffffff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .game {
+      background: #1e1e1e;
+      border-radius: 12px;
+      padding: 24px;
+      width: 100%;
+      max-width: 450px;
+      text-align: center;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    }
+
+    h1 {
+      margin-bottom: 8px;
+      font-size: 1.8rem;
+    }
+
+    p {
+      color: #aaa;
+      font-size: 0.95rem;
+      margin-bottom: 16px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+
+    button {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover:not(:disabled) {
+      background: #1d4ed8;
+    }
+
+    button:disabled {
+      background: #444;
+      color: #888;
+      cursor: not-allowed;
+    }
+
+    #status {
+      font-size: 0.85rem;
+      color: #fbbf24;
+      margin-bottom: 16px;
+    }
+
+    .stats {
+      display: flex;
+      justify-content: space-around;
+      background: #2a2a2a;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-weight: 500;
+    }
+
+    .stats strong {
+      color: #4ade80;
+    }
+
+    #board {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .hole {
+      background: #333;
+      aspect-ratio: 1;
+      font-size: 1.8rem;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      transition: transform 0.1s, background 0.1s;
+    }
+
+    .hole.active {
+      background: #854d0e;
+      cursor: pointer;
+    }
+
+    .hole.hit {
+      background: #166534;
+      transform: scale(0.95);
+    }
+
+    #message {
+      font-weight: bold;
+      margin-bottom: 20px;
+      min-height: 1.2em;
+    }
+
+    .leaderboard-container {
+      background: #2a2a2a;
+      padding: 16px;
+      border-radius: 8px;
+      text-align: left;
+    }
+
+    .leaderboard-container h2 {
+      font-size: 1.1rem;
+      margin-bottom: 10px;
+      text-align: center;
+      color: #fbbf24;
+    }
+
+    #leaderboard-list {
+      list-style: none;
+    }
+
+    #leaderboard-list li {
+      padding: 6px 0;
+      border-bottom: 1px solid #3d3d3d;
+      font-size: 0.9rem;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    #leaderboard-list li:last-child {
+      border-bottom: none;
+    }
+  </style>
 </head>
 <body>
   <main class="game">
     <h1>🐹 Whack-a-Mole</h1>
-    <p>Connect your 16-button controller and catch the moles!</p>
+    <p>Connect your 16-button BLE controller and catch the moles!</p>
 
     <div class="toolbar">
-      <button id="connect">Connect controller</button>
-      <button id="start" disabled>Start game</button>
+      <button id="connect">Connect Controller</button>
+      <button id="start" disabled>Start Game</button>
     </div>
 
     <p id="status">Controller disconnected</p>
 
     <div class="stats">
-      <div>Score <strong id="score">0</strong></div>
-      <div>Time <strong id="time">30</strong>s</div>
+      <div>Score: <strong id="score">0</strong></div>
+      <div>Time: <strong id="time">30</strong>s</div>
     </div>
 
     <div id="board" aria-label="Sixteen-hole game board"></div>
 
     <p id="message">Connect your controller to begin.</p>
+
+    <section class="leaderboard-container">
+      <h2>🏆 Leaderboard</h2>
+      <ul id="leaderboard-list">
+        <li><em>No scores yet</em></li>
+      </ul>
+    </section>
   </main>
-  <script src="game.js"></script>
+
+  <script>
+    const SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0";
+    const EVENT_UUID   = "12345678-1234-5678-1234-56789abcdef1";
+
+    const board = document.querySelector("#board");
+    const connectBtn = document.querySelector("#connect");
+    const startBtn = document.querySelector("#start");
+    const statusEl = document.querySelector("#status");
+    const messageEl = document.querySelector("#message");
+    const scoreEl = document.querySelector("#score");
+    const timeEl = document.querySelector("#time");
+    const leaderboardList = document.querySelector("#leaderboard-list");
+
+    let device = null;
+    let characteristic = null;
+    let connected = false;
+    let playing = false;
+    let score = 0;
+    let timeLeft = 30;
+    let activeHole = -1;
+    let gameTimer = null;
+    let moleTimer = null;
+    let moleDuration = 950;
+    let leaderboard = [];
+    let currentUser = "NO NAME";
+
+    // Build grid of 16 holes
+    const holes = Array.from({ length: 16 }, (_, id) => {
+      const button = document.createElement("button");
+      button.className = "hole";
+      button.textContent = "🕳️";
+      button.setAttribute("aria-label", `Hole ${id + 1}`);
+      button.addEventListener("click", () => hitHole(id));
+      board.appendChild(button);
+      return button;
+    });
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function clearMole() {
+      if (activeHole >= 0) {
+        holes[activeHole].classList.remove("active");
+        holes[activeHole].textContent = "🕳️";
+      }
+      activeHole = -1;
+    }
+
+    function spawnMole() {
+      if (!playing) return;
+      clearMole();
+
+      const id = Math.floor(Math.random() * holes.length);
+      activeHole = id;
+
+      holes[id].classList.add("active");
+      holes[id].textContent = "🐹";
+
+      clearTimeout(moleTimer);
+      moleTimer = setTimeout(() => {
+        clearMole();
+        if (playing) spawnMole();
+      }, moleDuration);
+    }
+
+    function hitHole(id) {
+      if (!playing || id !== activeHole) return;
+
+      clearTimeout(moleTimer);
+      holes[id].classList.add("hit");
+      holes[id].textContent = "💥";
+      activeHole = -1;
+
+      score++;
+      scoreEl.textContent = score;
+      messageEl.textContent = "Nice hit!";
+
+      setTimeout(() => {
+        holes[id].classList.remove("hit");
+        holes[id].textContent = "🕳️";
+      }, 180);
+
+      if (playing) spawnMole();
+    }
+
+    function startGame() {
+      // Ask for username before starting
+      let username = prompt("Enter your username:", "NO NAME");
+      if (!username || username.trim() === "") {
+        currentUser = "NO NAME";
+      } else {
+        currentUser = username.trim();
+      }
+
+      clearInterval(gameTimer);
+      clearTimeout(moleTimer);
+      clearMole();
+
+      score = 0;
+      timeLeft = 30;
+      playing = true;
+      moleDuration = 950;
+
+      scoreEl.textContent = score;
+      timeEl.textContent = timeLeft;
+      messageEl.textContent = `Go ${currentUser}! Catch the moles!`;
+      startBtn.disabled = true;
+
+      spawnMole();
+
+      gameTimer = setInterval(() => {
+        timeLeft--;
+        timeEl.textContent = timeLeft;
+
+        if (timeLeft <= 0) {
+          endGame();
+        }
+      }, 1000);
+    }
+
+    function endGame() {
+      playing = false;
+      clearInterval(gameTimer);
+      clearTimeout(moleTimer);
+      clearMole();
+
+      startBtn.disabled = !connected;
+      messageEl.textContent = `Game over, ${currentUser}! Final score: ${score}`;
+
+      updateLeaderboard(currentUser, score);
+    }
+
+    function updateLeaderboard(name, finalScore) {
+      leaderboard.push({ name, score: finalScore });
+      leaderboard.sort((a, b) => b.score - a.score);
+      leaderboard = leaderboard.slice(0, 5); // Keep top 5
+
+      leaderboardList.innerHTML = "";
+      leaderboard.forEach((entry, index) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span>${index + 1}. ${entry.name}</span><strong>${entry.score} pts</strong>`;
+        leaderboardList.appendChild(li);
+      });
+    }
+
+    async function connectController() {
+      if (!navigator.bluetooth) {
+        setStatus("Web Bluetooth unavailable. Use Chrome/Edge over HTTPS or Localhost.");
+        return;
+      }
+
+      try {
+        setStatus("Choose MoleController in the Bluetooth picker...");
+
+        device = await navigator.bluetooth.requestDevice({
+          filters: [{ services: [SERVICE_UUID] }],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        device.addEventListener("gattserverdisconnected", () => {
+          connected = false;
+          playing = false;
+          clearInterval(gameTimer);
+          clearTimeout(moleTimer);
+          clearMole();
+
+          startBtn.disabled = true;
+          setStatus("Controller disconnected");
+          messageEl.textContent = "Reconnect your controller to play.";
+        });
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        characteristic = await service.getCharacteristic(EVENT_UUID);
+
+        await characteristic.startNotifications();
+        characteristic.addEventListener("characteristicvaluechanged", onButtonEvent);
+
+        connected = true;
+        startBtn.disabled = false;
+        setStatus(`Connected: ${device.name || "MoleController"}`);
+        messageEl.textContent = "Ready! Start the game.";
+      } catch (error) {
+        setStatus(`Connection failed: ${error.message}`);
+      }
+    }
+
+    function onButtonEvent(event) {
+      const data = event.target.value;
+      const id = data.getUint8(0);
+      const pressed = data.getUint8(1) === 1;
+
+      if (pressed && id < 16) {
+        hitHole(id);
+      }
+    }
+
+    connectBtn.addEventListener("click", connectController);
+    startBtn.addEventListener("click", startGame);
+
+    // Keyboard controls for testing (Keys 1-9, A-G)
+    document.addEventListener("keydown", event => {
+      if (event.repeat) return;
+      const key = event.key.toUpperCase();
+      const id = "123456789ABCDEFG".indexOf(key);
+      if (id >= 0) hitHole(id);
+    });
+  </script>
 </body>
 </html>
