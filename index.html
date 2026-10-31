@@ -121,11 +121,11 @@
     }
 
     .hole.active.bomb {
-      background: #7f1d1d; /* Reddish background for bombs */
+      background: #7f1d1d;
     }
 
     .hole.active.golden {
-      background: #ca8a04; /* Golden background for golden hamsters */
+      background: #ca8a04;
     }
 
     .hole.hit {
@@ -253,12 +253,117 @@
     let score = 0;
     let timeLeft = 30;
     let activeHole = -1;
-    let activeType = null; // 'normal', 'bomb', or 'golden'
+    let activeType = null;
     let gameTimer = null;
     let moleTimer = null;
     let moleDuration = 950;
     let leaderboard = [];
     let currentUser = "NO NAME";
+
+    // Web Audio Context initialization
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    // --- Sound Effects Generators ---
+    function playHitSound() {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.1);
+    }
+
+    function playGoldenSound() {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(523.25, now); // C5
+      osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
+      osc.frequency.setValueAtTime(783.99, now + 0.16); // G5
+
+      gain.gain.setValueAtTime(0.4, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(now + 0.3);
+    }
+
+    function playBombSound() {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const bufferSize = audioCtx.sampleRate * 0.6;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+
+      // Generate loud noise pattern
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buffer;
+
+      // Lowpass filter for deep explosion impact
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1000, now);
+      filter.frequency.linearRampToValueAtTime(100, now + 0.5);
+
+      // HIGH VOLUME boost (gain: 2.0 for extra loudness)
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(2.0, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      noise.start(now);
+      noise.stop(now + 0.6);
+    }
+
+    function playBeepSound(freq) {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.15);
+    }
 
     // Build grid of 16 holes
     const holes = Array.from({ length: 16 }, (_, id) => {
@@ -291,18 +396,17 @@
       const id = Math.floor(Math.random() * holes.length);
       activeHole = id;
 
-      // Randomize spawn: 60% Normal, 20% Bomb, 20% Golden
       const rand = Math.random();
       if (rand < 0.20) {
         activeType = 'bomb';
         holes[id].classList.add("active", "bomb");
         holes[id].textContent = "💣";
-        moleDuration = 700; // Bombs vanish faster
+        moleDuration = 700;
       } else if (rand < 0.40) {
         activeType = 'golden';
         holes[id].classList.add("active", "golden");
         holes[id].textContent = "🌟";
-        moleDuration = 550; // Golden hamsters vanish much faster!
+        moleDuration = 550;
       } else {
         activeType = 'normal';
         holes[id].classList.add("active");
@@ -323,21 +427,24 @@
       clearTimeout(moleTimer);
 
       if (activeType === 'bomb') {
+        playBombSound(); // Play LOUD explosion
         holes[id].classList.add("hit-bomb");
         holes[id].textContent = "💥";
-        score = Math.max(0, score - 1); // Lose 1 point (doesn't go below 0)
+        score = Math.max(0, score - 1);
         scoreEl.textContent = score;
         messageEl.textContent = "Ouch! Hit a bomb! (-1 pt)";
       } else if (activeType === 'golden') {
+        playGoldenSound(); // Play chime
         holes[id].classList.add("hit");
         holes[id].textContent = "✨";
-        score += 2; // Gain 2 points
+        score += 2;
         scoreEl.textContent = score;
         messageEl.textContent = "Golden hit! (+2 pts)";
       } else {
+        playHitSound(); // Play pop sound
         holes[id].classList.add("hit");
         holes[id].textContent = "💥";
-        score += 1; // Gain 1 point
+        score += 1;
         scoreEl.textContent = score;
         messageEl.textContent = "Nice hit!";
       }
@@ -354,6 +461,8 @@
     }
 
     function startGame() {
+      initAudio();
+
       let username = prompt("Enter your username:", "NO NAME");
       if (!username || username.trim() === "") {
         currentUser = "NO NAME";
@@ -394,13 +503,16 @@
       countdownOverlay.textContent = count;
       countdownOverlay.classList.add("show");
       messageEl.textContent = `Get ready, ${currentUser}...`;
+      playBeepSound(440);
 
       const countdownInterval = setInterval(() => {
         count--;
         if (count > 0) {
           countdownOverlay.textContent = count;
+          playBeepSound(440);
         } else if (count === 0) {
           countdownOverlay.textContent = "GO!";
+          playBeepSound(880);
         } else {
           clearInterval(countdownInterval);
           countdownOverlay.classList.remove("show");
@@ -424,7 +536,7 @@
     function updateLeaderboard(name, finalScore) {
       leaderboard.push({ name, score: finalScore });
       leaderboard.sort((a, b) => b.score - a.score);
-      leaderboard = leaderboard.slice(0, 5); // Keep top 5
+      leaderboard = leaderboard.slice(0, 5);
 
       leaderboardList.innerHTML = "";
       leaderboard.forEach((entry, index) => {
@@ -435,6 +547,8 @@
     }
 
     async function connectController() {
+      initAudio();
+
       if (!navigator.bluetooth) {
         setStatus("Web Bluetooth unavailable. Use Chrome/Edge over HTTPS or Localhost.");
         return;
